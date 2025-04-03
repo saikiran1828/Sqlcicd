@@ -1,0 +1,54 @@
+name: CI/CD for Azure SQL Database
+
+on:
+  pull_request:
+    branches:
+      - main    # Trigger on PRs targeting the `main` branch
+    paths:
+      - 'scripts/**/*.sql'  # Trigger only when `.sql` files are modified
+
+jobs:
+  deploy_to_azure_sql:
+    runs-on: ubuntu-latest  # Use a Linux environment for running the action
+
+    steps:
+      # Step 1: Checkout the code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up the Azure CLI to interact with Azure
+      - name: Set up Azure CLI
+        uses: azure/cli-action@v1
+        with:
+          azure-cli-version: '2.22.0'
+
+      # Step 3: Log in to Azure using the Service Principal
+      - name: Login to Azure
+        run: |
+          az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+
+      # Step 4: Deploy SQL scripts to Azure SQL Database
+      - name: Deploy SQL Scripts to Azure SQL Database
+        run: |
+          # Azure SQL Database details from GitHub secrets
+          AZURE_SQL_SERVER=${{ secrets.AZURE_SQL_SERVER_NAME }}
+          AZURE_SQL_DATABASE=${{ secrets.AZURE_SQL_DATABASE_NAME }}
+          
+          # Loop through all .sql files in the 'scripts/migrations' folder and execute them
+          for sql_file in $(find scripts/migrations -name '*.sql'); do
+            echo "Running $sql_file..."
+            
+            # Execute the SQL script using Azure CLI
+            az sql db query \
+              --server $AZURE_SQL_SERVER \
+              --name $AZURE_SQL_DATABASE \
+              --query "$(<$sql_file)" \
+              --auth-type "SQL" \
+              --username ${{ secrets.AZURE_SQL_ADMIN_USER }} \
+              --password ${{ secrets.AZURE_SQL_ADMIN_PASSWORD }}
+
+          done
+
+      # Step 5: Log out from Azure to clean up the session
+      - name: Logout from Azure
+        run: az logout
